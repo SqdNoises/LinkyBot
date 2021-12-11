@@ -212,7 +212,7 @@ Coded in `Python` using the `nextcord` library.
         
         # ''
         if msg == '':
-            intro = intro()
+            intro = await intro()
             await reply(intro)
         
         #############################
@@ -303,7 +303,7 @@ Checking...
     
     # if message is bot mention
     if msg == cum or msg == cum2:
-        intro = intro()
+        intro = await intro()
         await reply(intro)
     
     # update status lol
