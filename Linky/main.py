@@ -10,8 +10,10 @@ import socket
 import datetime
 import pytz
 import json
-import environ
 import pymongo
+import dns.resolver
+from time import monotonic
+import environ
 environ.token()
 never_gonna_give_you_up = os.getenv('TOKEN')
 environ.connectDB()
@@ -22,13 +24,17 @@ userHost = u + '@' + H
 client = nextcord.Client(intents=nextcord.Intents.all())
 # connecting to db
 print('Connecting to DB...')
-cluster = MongoClient(conDB)
+dns.resolver.default_resolver=dns.resolver.Resolver(configure=False)
+dns.resolver.default_resolver.nameservers=['8.8.8.8']
+cluster = pymongo.MongoClient(conDB)
 db = cluster["linkydb"]
 print('Connected!\n')
 
 # on ready
 @client.event
 async def on_ready():
+    UP = monotonic()
+    os.environ['UP'] = str(UP)
     p = os.getenv('prefix')
     if p == None: os.environ['prefix'] = 'l!'
     p = os.getenv('prefix')
@@ -36,18 +42,30 @@ async def on_ready():
     print(f'Logged in as {str(client.user)}!')
     print(f'Running on {userHost}!')
     print('')
-    await client.change_presence(activity=nextcord.Activity(type=nextcord.ActivityType.watching, name=f'{p}help'), status=nextcord.Status.online)
+    wait = asyncio.sleep
+    rldinf = os.getenv('reloadinfo')
+    channel = os.getenv('channel')
+    if rldinf == 'reloading':
+        channel = client.get_channel(int(channel))
+        os.environ['reloadinfo'] = 'connected'
+        await channel.send('**Reloaded!**')
+        await client.change_presence(activity=nextcord.Activity(type=nextcord.ActivityType.watching, name=f'Reloaded!'), status=nextcord.Status.idle)
+        await wait(5)
+    else: await wait(1.5)
+    guilds = len(client.guilds)
+    await client.change_presence(activity=nextcord.Activity(type=nextcord.ActivityType.watching, name=f'{guilds} servers! | {p}help'), status=nextcord.Status.online)
 
-# on_message
+# on message
 @client.event
 async def on_message(message):
     # to prevent lag:
     # Section a) checks if message starts with bot prefix or message is equal to bot ping
     p = os.getenv('prefix')
-    p = p.lower()
-    cum = client.user.mention
-    cum2 = cum.replace('<@', '<@!')
-    if msg.startswith(p) or msg == cum or msg == cum2: pass
+    if p == None: os.environ['prefix'] = 'l!'
+    p = os.getenv('prefix')
+    lowp = p.lower()
+    cum2 = client.user.mention.replace('<@', '<@!')
+    if message.content.startswith(lowp) or message.content == client.user.mention or message.content == cum2: pass
     else: return
     # Section b) checks if message is from DMs
     if message.guild == None:
@@ -66,6 +84,7 @@ async def on_message(message):
     lowmsg = msg.lower()
     edit = message.edit
     react = message.add_reaction
+    cum = client.user.mention
     prefix = p
     yes = '<a:Animated_Checkmark:901803000861966346>'
     no = '<a:no:901803557014077480>'
@@ -103,6 +122,9 @@ async def on_message(message):
     teal = c.teal()
     yellow = c.yellow()
     
+    # top role colour
+    if author.top_role.colour == default:  trc = dark_theme
+    else: trc = author.top_role.colour
     
     ####################
     # start of functions define #
@@ -121,12 +143,47 @@ async def on_message(message):
         p = os.getenv('prefix')
         lowp = p.lower()
         if msg.startswith(p):
-            msg = msg.split(p, 1)
+            msg = msg.split(p, 1)[1]
             msg = msg.lstrip()
         elif msg.startswith(lowp):
-            msg = msg.split(lowp, 1)
+            msg = msg.split(lowp, 1)[1]
             msg = msg.lstrip()
         return msg
+    
+    # time rn
+    def timenow(debug=True):
+        os.environ['time'] = '-[!] Error-'
+        current_time = datetime.datetime.now(pytz.timezone('Asia/Kolkata')) 
+        hour = current_time.hour
+        minute = current_time.minute
+        second = current_time.second
+        if debug == True:
+            time = f'[ {hour}:{minute}:{second} ]'
+            os.environ['time'] = time
+        elif debug == False:
+            time = f'{hour}:{minute}:{second}'
+            os.environ['time'] = time
+        time = os.getenv('time')
+        return time
+    
+    # intro
+    async def intro():
+        cServ = await client.fetch_guild(919110751103361084)
+        alexy = await cServ.fetch_member(697323031919591454)
+        sqd = await cServ.fetch_member(477683725673693184)
+        intro = f'''Hey! I am **Linky Bot**. Created by **`{alexy}`** and **`{sqd}`**.
+My prefix is **`{p}`**.
+Coded in `Python` using the `nextcord` library.
+(short introduction of the bot here)
+**Join the community server here: https://discord.gg/E4CDUJBUm5**'''
+        return intro
+    
+    # community server
+    async def cServ():
+        cServ = await client.fetch_guild(919110751103361084)
+        alexy = await cServ.fetch_member(697323031919591454)
+        sqd = await cServ.fetch_member(477683725673693184)
+        return [cServ, alexy, sqd]
     
     # end of functions define #
     ###################
@@ -155,39 +212,99 @@ async def on_message(message):
         
         # ''
         if msg == '':
-            cServ = await client.fetch_guild(919110751103361084)
-            sqd = await cServ.fetch_member(477683725673693184)
-            alexy = await cServ.fetch_member(697323031919591454)
-            await reply(f'''Hey! I am **Linky Bot**. Created by {sqd} and {alexy}.
-My prefix is **`{p}`**.
-Coded in `Python` using the `nextcord` library.
-(short introduction of the bot here)
-**Join the community server here: https://discord.gg/E4CDUJBUm5**''')
-        
-        ############
-        # COMMANDS #
-        ############
+            intro = intro()
+            await reply(intro)
         
         #############################
         ### type commands below this line ###
         
-        # command name
-        elif msg == 'command name':
-            await reply('Hmm')
+        # help
+        elif msg == 'help':
+            emb = nextcord.Embed(title=f'Commands - Help - {client.user.name}', description=f'''
+```
+Prefix: {prefix}
+```
+**`{p}help`** - Replies with a list of commands
+**`{p}aliases`** - Shows aliases for commands
+''', color=trc)
+            emb.add_field(name='Links', value=f'''
+```py
+# pretty empty ay?
+```
+''', inline=False)
+            emb.add_field(name='Bot', value=f'''
+**`{p}ping`** - Replies with the bot latency
+**`{p}sourcecode`** - Replies with the bot's source code
+**`{p}stats`** - Replies with bot stats
+''', inline=False)
+            emb.set_author(name=client.user.name, icon_url=client.user.avatar.url)
+            await reply(embed=emb)
         
+        # aliases
+        elif msg == 'aliases':
+            emb = nextcord.Embed(title=f'Aliases - {client.user.name}', description=f'''
+```
+Prefix: {prefix}
+```
+**`{p}ping`** - {p}latency
+**`{p}sourcecode`** - {p}source, {p}source-code, {p}sc, {p}code
+''', color=trc)
+            emb.set_author(name=client.user.name, icon_url=client.user.avatar.url)
+            await reply(embed=emb)
+        
+        # reload
+        elif msg == 'reload' or msg == 'r':
+             E = await cServ()
+             alexy = E[1]
+             sqd = E[2]
+             if author == alexy or author == sqd:
+               channel = message.channel.id
+               os.environ['reloadinfo'] = 'reloading'
+               os.environ['channel'] = str(channel)
+               await reply('**Reloading...**')
+               await client.change_presence(activity=nextcord.Activity(type=nextcord.ActivityType.watching, name=f'Reloading!'), status=nextcord.Status.dnd)
+               time = timenow()
+               print(f'\n{time} Reloading Bot...\n')
+               os.system('python3 main.py')
+               os._exit(1)
+             else:
+                 if guild.id == cServ.id: await reply(f'**{no} You do not have permission to use this command!**')
+                 else: await reply(f'**Command `{p}{msg}` not found!**')
+         
+         # ping
+        elif msg == 'ping' or msg == 'latency':
+            emb = nextcord.Embed(title=client.user.name, description='''
+Checking...
+''', color=trc)
+            emb.set_author(name=client.user.name, icon_url=client.user.avatar.url)
+            before = monotonic()
+            pingmsg = await reply(embed=emb)
+            ping = round((monotonic() - before) * 1000, 2)
+            cping = round(client.latency * 1000, 2)
+            avg_ping = sum([ping, cping]) / 2
+            if avg_ping <= 15: colour = dark_green
+            elif avg_ping <= 115 and ping > 15: colour = green
+            elif avg_ping <= 275 and ping > 115: colour = yellow
+            elif avg_ping <= 500 and ping > 275: colour = red
+            elif avg_ping <= 750 and ping > 500: colour = dark_orange
+            else: colour = dark_red
+            emb = nextcord.Embed(title='Pong! 🏓', description=f'''
+**Latency:** {ping} ms
+**Client Latency:** {cping} ms
+
+*Currently running on **`{userHost}`**.*
+''', color=colour)
+            emb.set_author(name=client.user.name, icon_url=client.user.avatar.url)
+            await pingmsg.edit(embed=emb)
+         
         ### type commands above this line ###
         #############################
         else: await reply(f'**Command `{p}{msg}` not found!**')
     
+    # if message is bot mention
     if msg == cum or msg == cum2:
-        cServ = await client.fetch_guild(919110751103361084)
-        sqd = await cServ.fetch_member(477683725673693184)
-        alexy = await cServ.fetch_member(697323031919591454)
-        await reply(f'''Hey! I am **Linky Bot**. Created by {sqd} and {alexy}.
-My prefix is **`{p}`**.
-Coded in `Python` using the `nextcord` library.
-(short introduction of the bot here)
-**Join the community server here: https://discord.gg/E4CDUJBUm5**''')
+        intro = intro()
+        await reply(intro)
     
     # update status lol
     guilds = len(client.guilds)
